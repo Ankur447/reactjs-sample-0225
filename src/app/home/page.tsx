@@ -1,8 +1,10 @@
 import React from 'react'
-
+import { Kanban } from "@/components/ui/kanban";
 const page = () => {
   return (
-    <div>home page</div>
+    <div className="flex h-screen w-full justify-center items-center">
+      <Kanban />
+    </div>
   )
 }
 

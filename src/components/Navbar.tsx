@@ -11,6 +11,7 @@ import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 export default function Navbar() {
@@ -42,8 +43,14 @@ export default function Navbar() {
           href="/"
           className="flex items-center mr-4 space-x-3 hover:opacity-80 transition-opacity"
         >
-          <div className="bg-gradient-to-br from-primary to-primary/90 w-10 h-10 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xl">T</span>
+          <div className="w-10 h-10 relative">
+            <Image
+              src="https://pbs.twimg.com/profile_banners/1554658280399462400/1678295595/1080x360"
+              alt="Taskboard Logo"
+              fill
+              className="object-cover rounded-lg"
+              priority
+            />
           </div>
           <h1 className="text-xl font-bold text-foreground">Taskboard</h1>
         </Link>
@@ -75,10 +82,12 @@ export default function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Avatar className="h-8 w-8">
-              <AvatarImage src={avatarUrl} alt="User Avatar" />
-              <AvatarFallback>TB</AvatarFallback>
-            </Avatar>
+            <Link href="/profile" className="hover:opacity-80 transition-opacity">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={avatarUrl} alt="User Avatar" />
+                <AvatarFallback>TB</AvatarFallback>
+              </Avatar>
+            </Link>
           </div>
         </div>
       </div>
