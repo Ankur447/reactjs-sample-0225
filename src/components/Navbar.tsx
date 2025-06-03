@@ -43,16 +43,17 @@ export default function Navbar() {
           href="/"
           className="flex items-center mr-4 space-x-3 hover:opacity-80 transition-opacity"
         >
-          <div className="w-10 h-10 relative">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 relative overflow-hidden rounded-lg">
             <Image
               src="https://pbs.twimg.com/profile_banners/1554658280399462400/1678295595/1080x360"
               alt="Taskboard Logo"
               fill
-              className="object-cover rounded-lg"
+              sizes="(max-width: 640px) 40px, 48px"
+              className="object-cover hover:scale-105 transition-transform duration-300"
               priority
             />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Taskboard</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-foreground hidden sm:block">Taskboard</h1>
         </Link>
 
         <div className="flex flex-1 items-center justify-between space-x-2">

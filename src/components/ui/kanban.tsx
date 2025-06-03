@@ -11,10 +11,11 @@ import { FiPlus, FiTrash } from "react-icons/fi";
 import { motion } from "framer-motion";
 import { FaFire } from "react-icons/fa";
 import { cn } from "@/lib/utils";
+import AddProject from "@/components/AddProject";
 
 export const Kanban = () => {
   return (
-    <div className={cn("h-screen w-full bg-neutral-900 text-neutral-50")}>
+    <div className={cn("h-screen w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50")}>
       <Board />
     </div>
   );
@@ -24,37 +25,44 @@ const Board = () => {
   const [cards, setCards] = useState(DEFAULT_CARDS);
 
   return (
-    <div className="flex h-full w-full gap-3 overflow-scroll p-12">
-      <Column
-        title="Backlog"
-        column="backlog"
-        headingColor="text-neutral-500"
-        cards={cards}
-        setCards={setCards}
-      />
-      <Column
-        title="TODO"
-        column="todo"
-        headingColor="text-yellow-200"
-        cards={cards}
-        setCards={setCards}
-      />
-      <Column
-        title="In progress"
-        column="doing"
-        headingColor="text-blue-200"
-        cards={cards}
-        setCards={setCards}
-      />
-      <Column
-        title="Complete"
-        column="done"
-        headingColor="text-emerald-200"
-        cards={cards}
-        setCards={setCards}
-      />
-      <BurnBarrel setCards={setCards} />
-    </div>
+    <>
+      <div className="flex p-12">
+        <div className="w-56 shrink-0">
+          <AddProject />
+        </div>
+      </div>
+      <div className="flex h-full w-full gap-3 overflow-scroll px-12 pb-12">
+        <Column
+          title="Backlog"
+          column="backlog"
+          headingColor="text-neutral-700 dark:text-neutral-500"
+          cards={cards}
+          setCards={setCards}
+        />
+        <Column
+          title="TODO"
+          column="todo"
+          headingColor="text-yellow-600 dark:text-yellow-200"
+          cards={cards}
+          setCards={setCards}
+        />
+        <Column
+          title="In progress"
+          column="doing"
+          headingColor="text-blue-600 dark:text-blue-200"
+          cards={cards}
+          setCards={setCards}
+        />
+        <Column
+          title="Complete"
+          column="done"
+          headingColor="text-emerald-600 dark:text-emerald-200"
+          cards={cards}
+          setCards={setCards}
+        />
+        <BurnBarrel setCards={setCards} />
+      </div>
+    </>
   );
 };
 
@@ -181,8 +189,8 @@ const Column = ({
   return (
     <div className="w-56 shrink-0">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className={`font-medium ${headingColor}`}>{title}</h3>
-        <span className="rounded text-sm text-neutral-400">
+        <h3 className={`font-bold ${headingColor}`}>{title}</h3>
+        <span className="rounded text-sm font-bold text-neutral-400">
           {filteredCards.length}
         </span>
       </div>
@@ -218,9 +226,9 @@ const Card = ({ title, id, column, handleDragStart }: CardProps) => {
         layoutId={id}
         draggable="true"
         onDragStart={(e) => handleDragStart(e, { title, id, column })}
-        className="cursor-grab rounded border border-neutral-700 bg-neutral-800 p-3 active:cursor-grabbing"
+        className="cursor-grab rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-3 active:cursor-grabbing"
       >
-        <p className="text-sm text-neutral-100">{title}</p>
+        <p className="text-sm text-neutral-900 dark:text-neutral-100">{title}</p>
       </motion.div>
     </>
   );
@@ -314,18 +322,18 @@ const AddCard = ({ column, setCards }: AddCardProps) => {
             onChange={(e) => setText(e.target.value)}
             autoFocus
             placeholder="Add new task..."
-            className="w-full rounded border border-violet-400 bg-violet-400/20 p-3 text-sm text-neutral-50 placeholder-violet-300 focus:outline-0"
+            className="w-full rounded border border-violet-400 bg-violet-400/20 p-3 text-sm text-neutral-900 dark:text-neutral-50 placeholder-violet-300 focus:outline-0"
           />
           <div className="mt-1.5 flex items-center justify-end gap-1.5">
             <button
               onClick={() => setAdding(false)}
-              className="px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:text-neutral-50"
+              className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 transition-colors hover:text-neutral-900 dark:hover:text-neutral-50"
             >
               Close
             </button>
             <button
               type="submit"
-              className="flex items-center gap-1.5 rounded bg-neutral-50 px-3 py-1.5 text-xs text-neutral-950 transition-colors hover:bg-neutral-300"
+              className="flex items-center gap-1.5 rounded bg-neutral-900 dark:bg-neutral-50 px-3 py-1.5 text-xs text-neutral-50 dark:text-neutral-900 transition-colors hover:bg-neutral-700 dark:hover:bg-neutral-300"
             >
               <span>Add</span>
               <FiPlus />
@@ -336,7 +344,7 @@ const AddCard = ({ column, setCards }: AddCardProps) => {
         <motion.button
           layout
           onClick={() => setAdding(true)}
-          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:text-neutral-50"
+          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 transition-colors hover:text-neutral-900 dark:hover:text-neutral-50"
         >
           <span>Add card</span>
           <FiPlus />
