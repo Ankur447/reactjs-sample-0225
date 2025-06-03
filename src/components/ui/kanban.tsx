@@ -4,7 +4,7 @@ import React, {
   Dispatch,
   SetStateAction,
   useState,
-  DragEvent,
+  type DragEvent,
   FormEvent,
 } from "react";
 import { FiPlus, FiTrash } from "react-icons/fi";
@@ -218,6 +218,27 @@ type CardProps = CardType & {
 };
 
 const Card = ({ title, id, column, handleDragStart }: CardProps) => {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleTouchStart = () => {
+    setIsDragging(true);
+    // Create a drag event to reuse existing drag logic
+    const dragEvent = new DragEvent('dragstart', {
+      bubbles: true,
+      cancelable: true,
+    });
+    handleDragStart(dragEvent, { title, id, column });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    e.preventDefault();
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
   return (
     <>
       <DropIndicator beforeId={id} column={column} />
@@ -226,7 +247,12 @@ const Card = ({ title, id, column, handleDragStart }: CardProps) => {
         layoutId={id}
         draggable="true"
         onDragStart={(e) => handleDragStart(e, { title, id, column })}
-        className="cursor-grab rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-3 active:cursor-grabbing"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className={`cursor-grab rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-3 active:cursor-grabbing ${
+          isDragging ? 'opacity-50' : ''
+        }`}
       >
         <p className="text-sm text-neutral-900 dark:text-neutral-100">{title}</p>
       </motion.div>
