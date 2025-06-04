@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,9 +11,15 @@ import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { db } from "@/lib/firebase"; // your firebase config
-import { collection, addDoc, Timestamp } from "firebase/firestore";
-
+import { db } from "@/lib/firebase";
+import {
+  collection,
+  addDoc,
+  Timestamp,
+  query,
+  where,
+  onSnapshot,
+} from "firebase/firestore";
 
 interface Project {
   id: string;
@@ -21,41 +27,50 @@ interface Project {
 }
 
 export default function AddProject() {
-  const [projects, setProjects] = useState<Project[]>([
-    { id: "1", name: "Marketing Campaign" },
-    { id: "2", name: "Product Launch" },
-    { id: "3", name: "Website Redesign" },
-  ]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
+  const user = JSON.parse(sessionStorage.getItem("user") || "{}");
+
+  // 🔁 Load projects on mount
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const q = query(collection(db, "projects"), where("ownerId", "==", user.uid));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as { name: string }),
+      }));
+      setProjects(data);
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
   const handleAddProject = async () => {
     if (!newProjectName.trim()) return;
-  
-    const user = JSON.parse(sessionStorage.getItem("user") || "{}");
-  
     if (!user?.uid) {
       console.error("User not found in sessionStorage.");
       return;
     }
-  
+
     const newProject = {
       name: newProjectName.trim(),
       ownerId: user.uid,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
-  
-    const docRef = await addDoc(collection(db, "projects"), newProject);
-    const createdProject = { id: docRef.id, name: newProject.name };
-  
-    setProjects([...projects, createdProject]);
-    setSelectedProject(createdProject);
+
+    await addDoc(collection(db, "projects"), newProject);
+
+    // onSnapshot will auto-refresh the project list
     setNewProjectName("");
     setIsDialogOpen(false);
   };
-  
 
   return (
     <div className="flex items-center space-x-2">
@@ -98,7 +113,10 @@ export default function AddProject() {
             <h3 className="text-lg font-medium">Create New Project</h3>
             <div className="space-y-4">
               <div>
-                <label htmlFor="projectName" className="block text-sm font-medium mb-2">
+                <label
+                  htmlFor="projectName"
+                  className="block text-sm font-medium mb-2"
+                >
                   Project Name
                 </label>
                 <Input
