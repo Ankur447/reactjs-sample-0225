@@ -1,3 +1,4 @@
+// app/store/useProjectStore.ts
 import { create } from "zustand";
 
 type Project = {
@@ -7,7 +8,7 @@ type Project = {
 
 type ProjectStore = {
   selectedProject: Project | null;
-  setSelectedProject: (project: Project) => void;
+  setSelectedProject: (project: Project | null) => void; // Allow null
 };
 
 export const useProjectStore = create<ProjectStore>((set) => ({
