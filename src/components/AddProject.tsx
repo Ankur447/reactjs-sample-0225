@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { db } from "@/lib/firebase"; // your firebase config
+import { collection, addDoc, Timestamp } from "firebase/firestore";
+
 
 interface Project {
   id: string;
@@ -27,18 +30,32 @@ export default function AddProject() {
   const [newProjectName, setNewProjectName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const handleAddProject = () => {
-    if (newProjectName.trim() !== "") {
-      const newProject = {
-        id: Date.now().toString(),
-        name: newProjectName.trim(),
-      };
-      setProjects([...projects, newProject]);
-      setSelectedProject(newProject);
-      setNewProjectName("");
-      setIsDialogOpen(false);
+  const handleAddProject = async () => {
+    if (!newProjectName.trim()) return;
+  
+    const user = JSON.parse(sessionStorage.getItem("user") || "{}");
+  
+    if (!user?.uid) {
+      console.error("User not found in sessionStorage.");
+      return;
     }
+  
+    const newProject = {
+      name: newProjectName.trim(),
+      ownerId: user.uid,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+  
+    const docRef = await addDoc(collection(db, "projects"), newProject);
+    const createdProject = { id: docRef.id, name: newProject.name };
+  
+    setProjects([...projects, createdProject]);
+    setSelectedProject(createdProject);
+    setNewProjectName("");
+    setIsDialogOpen(false);
   };
+  
 
   return (
     <div className="flex items-center space-x-2">

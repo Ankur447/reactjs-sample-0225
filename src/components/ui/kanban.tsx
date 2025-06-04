@@ -4,6 +4,7 @@ import React, {
   Dispatch,
   SetStateAction,
   useState,
+  useEffect,
   type DragEvent,
   FormEvent,
 } from "react";
@@ -12,17 +13,53 @@ import { motion } from "framer-motion";
 import { FaFire } from "react-icons/fa";
 import { cn } from "@/lib/utils";
 import AddProject from "@/components/AddProject";
+import { db } from "@/lib/firebase";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+
+const selectedProjectId = "MAQ26WhVYuxj97DWv52u"; // TODO: Get from state or props
+const userId = "nqBWR6Do46ggw6lx9vy2I40hlP43"; // TODO: Get from auth/session
 
 export const Kanban = () => {
   return (
-    <div className={cn("h-screen w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50")}>
+    <div
+      className={cn(
+        "h-screen w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50"
+      )}
+    >
       <Board />
     </div>
   );
 };
 
 const Board = () => {
-  const [cards, setCards] = useState(DEFAULT_CARDS);
+  const [cards, setCards] = useState<CardType[]>([]);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "tasks"),
+      where("projectId", "==", selectedProjectId)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const tasks = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as CardType[];
+      setCards(tasks);
+    });
+
+    return () => unsub();
+  }, []);
 
   return (
     <>
@@ -32,39 +69,28 @@ const Board = () => {
         </div>
       </div>
       <div className="flex h-full w-full gap-3 overflow-scroll px-12 pb-12">
-        <Column
-          title="Backlog"
-          column="backlog"
-          headingColor="text-neutral-700 dark:text-neutral-500"
-          cards={cards}
-          setCards={setCards}
-        />
-        <Column
-          title="TODO"
-          column="todo"
-          headingColor="text-yellow-600 dark:text-yellow-200"
-          cards={cards}
-          setCards={setCards}
-        />
-        <Column
-          title="In progress"
-          column="doing"
-          headingColor="text-blue-600 dark:text-blue-200"
-          cards={cards}
-          setCards={setCards}
-        />
-        <Column
-          title="Complete"
-          column="done"
-          headingColor="text-emerald-600 dark:text-emerald-200"
-          cards={cards}
-          setCards={setCards}
-        />
+        {columns.map(({ title, column, headingColor }) => (
+          <Column
+            key={column}
+            title={title}
+            column={column}
+            headingColor={headingColor}
+            cards={cards}
+            setCards={setCards}
+          />
+        ))}
         <BurnBarrel setCards={setCards} />
       </div>
     </>
   );
 };
+
+const columns = [
+  { title: "Backlog", column: "backlog", headingColor: "text-neutral-700 dark:text-neutral-500" },
+  { title: "TODO", column: "todo", headingColor: "text-yellow-600 dark:text-yellow-200" },
+  { title: "In progress", column: "doing", headingColor: "text-blue-600 dark:text-blue-200" },
+  { title: "Complete", column: "done", headingColor: "text-emerald-600 dark:text-emerald-200" },
+];
 
 type ColumnProps = {
   title: string;
@@ -74,110 +100,78 @@ type ColumnProps = {
   setCards: Dispatch<SetStateAction<CardType[]>>;
 };
 
-const Column = ({
-  title,
-  headingColor,
-  cards,
-  column,
-  setCards,
-}: ColumnProps) => {
+const Column = ({ title, headingColor, cards, column, setCards }: ColumnProps) => {
   const [active, setActive] = useState(false);
 
   const handleDragStart = (e: DragEvent, card: CardType) => {
     e.dataTransfer.setData("cardId", card.id);
   };
 
-  const handleDragEnd = (e: DragEvent) => {
+  const handleDragEnd = async (e: DragEvent) => {
     const cardId = e.dataTransfer.getData("cardId");
-
-    setActive(false);
-    clearHighlights();
-
     const indicators = getIndicators();
     const { element } = getNearestIndicator(e, indicators);
-
     const before = element.dataset.before || "-1";
 
-    if (before !== cardId) {
-      let copy = [...cards];
+    let updatedCards = [...cards];
+    let movedCard = updatedCards.find((c) => c.id === cardId);
+    if (!movedCard) return;
 
-      let cardToTransfer = copy.find((c) => c.id === cardId);
-      if (!cardToTransfer) return;
-      cardToTransfer = { ...cardToTransfer, column };
+    movedCard = { ...movedCard, column };
 
-      copy = copy.filter((c) => c.id !== cardId);
+    updatedCards = updatedCards.filter((c) => c.id !== cardId);
+    const moveToBack = before === "-1";
 
-      const moveToBack = before === "-1";
-
-      if (moveToBack) {
-        copy.push(cardToTransfer);
-      } else {
-        const insertAtIndex = copy.findIndex((el) => el.id === before);
-        if (insertAtIndex === undefined) return;
-
-        copy.splice(insertAtIndex, 0, cardToTransfer);
-      }
-
-      setCards(copy);
+    if (moveToBack) {
+      updatedCards.push(movedCard);
+    } else {
+      const insertIndex = updatedCards.findIndex((c) => c.id === before);
+      updatedCards.splice(insertIndex, 0, movedCard);
     }
+
+    await updateDoc(doc(db, "tasks", cardId), {
+      column,
+      updatedAt: Timestamp.now(),
+      position: Date.now(),
+    });
+
+    setCards(updatedCards);
   };
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     highlightIndicator(e);
-
     setActive(true);
   };
 
   const clearHighlights = (els?: HTMLElement[]) => {
     const indicators = els || getIndicators();
-
-    indicators.forEach((i) => {
-      i.style.opacity = "0";
-    });
+    indicators.forEach((i) => (i.style.opacity = "0"));
   };
 
   const highlightIndicator = (e: DragEvent) => {
     const indicators = getIndicators();
-
     clearHighlights(indicators);
-
     const el = getNearestIndicator(e, indicators);
-
     el.element.style.opacity = "1";
   };
 
   const getNearestIndicator = (e: DragEvent, indicators: HTMLElement[]) => {
     const DISTANCE_OFFSET = 50;
-
-    const el = indicators.reduce(
+    return indicators.reduce(
       (closest, child) => {
         const box = child.getBoundingClientRect();
-
         const offset = e.clientY - (box.top + DISTANCE_OFFSET);
-
-        if (offset < 0 && offset > closest.offset) {
-          return { offset: offset, element: child };
-        } else {
-          return closest;
-        }
+        return offset < 0 && offset > closest.offset
+          ? { offset, element: child }
+          : closest;
       },
-      {
-        offset: Number.NEGATIVE_INFINITY,
-        element: indicators[indicators.length - 1],
-      }
-    );
-
-    return el;
-  };
-
-  const getIndicators = () => {
-    return Array.from(
-      document.querySelectorAll(
-        `[data-column="${column}"]`
-      ) as unknown as HTMLElement[]
+      { offset: Number.NEGATIVE_INFINITY, element: indicators[indicators.length - 1] }
     );
   };
+
+  const getIndicators = () =>
+    Array.from(document.querySelectorAll(`[data-column="${column}"]`) as unknown as HTMLElement[]);
 
   const handleDragLeave = () => {
     clearHighlights();
@@ -198,13 +192,11 @@ const Column = ({
         onDrop={handleDragEnd}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        className={`h-full w-full transition-colors ${
-          active ? "bg-neutral-800/50" : "bg-neutral-800/0"
-        }`}
+        className={`h-full w-full transition-colors ${active ? "bg-neutral-800/50" : "bg-neutral-800/0"}`}
       >
-        {filteredCards.map((c) => {
-          return <Card key={c.id} {...c} handleDragStart={handleDragStart} />;
-        })}
+        {filteredCards.map((c) => (
+          <Card key={c.id} {...c} handleDragStart={handleDragStart} />
+        ))}
         <DropIndicator beforeId={null} column={column} />
         <AddCard column={column} setCards={setCards} />
       </div>
@@ -212,32 +204,60 @@ const Column = ({
   );
 };
 
-type CardProps = CardType & {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  handleDragStart: Function;
+const AddCard = ({ column, setCards }: AddCardProps) => {
+  const [text, setText] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!text.trim().length) return;
+
+    const newTask = {
+      title: text.trim(),
+      column,
+      userId,
+      projectId: selectedProjectId,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+      position: Date.now(),
+    };
+
+    const docRef = await addDoc(collection(db, "tasks"), newTask);
+    setCards((prev) => [...prev, { ...newTask, id: docRef.id }]);
+    setText("");
+    setAdding(false);
+  };
+
+  return adding ? (
+    <motion.form layout onSubmit={handleSubmit}>
+      <textarea
+        onChange={(e) => setText(e.target.value)}
+        autoFocus
+        value={text}
+        placeholder="Add new task..."
+        className="w-full rounded border border-violet-400 bg-violet-400/20 p-3 text-sm placeholder-violet-300"
+      />
+      <div className="mt-1.5 flex items-center justify-end gap-1.5">
+        <button onClick={() => setAdding(false)} className="text-xs text-neutral-500">Close</button>
+        <button type="submit" className="text-xs px-3 py-1.5 bg-neutral-900 text-white rounded">
+          Add <FiPlus className="inline ml-1" />
+        </button>
+      </div>
+    </motion.form>
+  ) : (
+    <motion.button
+      layout
+      onClick={() => setAdding(true)}
+      className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900"
+    >
+      <span>Add card</span>
+      <FiPlus />
+    </motion.button>
+  );
 };
 
 const Card = ({ title, id, column, handleDragStart }: CardProps) => {
   const [isDragging, setIsDragging] = useState(false);
-
-  const handleTouchStart = () => {
-    setIsDragging(true);
-    // Create a drag event to reuse existing drag logic
-    const dragEvent = new DragEvent('dragstart', {
-      bubbles: true,
-      cancelable: true,
-    });
-    handleDragStart(dragEvent, { title, id, column });
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    e.preventDefault();
-  };
-
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-  };
 
   return (
     <>
@@ -245,13 +265,10 @@ const Card = ({ title, id, column, handleDragStart }: CardProps) => {
       <motion.div
         layout
         layoutId={id}
-        draggable="true"
+        draggable
         onDragStart={(e) => handleDragStart(e, { title, id, column })}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`cursor-grab rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-3 active:cursor-grabbing ${
-          isDragging ? 'opacity-50' : ''
+        className={`cursor-grab p-3 rounded border bg-white dark:bg-neutral-800 ${
+          isDragging ? "opacity-50" : ""
         }`}
       >
         <p className="text-sm text-neutral-900 dark:text-neutral-100">{title}</p>
@@ -260,26 +277,15 @@ const Card = ({ title, id, column, handleDragStart }: CardProps) => {
   );
 };
 
-type DropIndicatorProps = {
-  beforeId: string | null;
-  column: string;
-};
+const DropIndicator = ({ beforeId, column }: DropIndicatorProps) => (
+  <div
+    data-before={beforeId || "-1"}
+    data-column={column}
+    className="my-0.5 h-0.5 w-full bg-violet-400 opacity-0"
+  />
+);
 
-const DropIndicator = ({ beforeId, column }: DropIndicatorProps) => {
-  return (
-    <div
-      data-before={beforeId || "-1"}
-      data-column={column}
-      className="my-0.5 h-0.5 w-full bg-violet-400 opacity-0"
-    />
-  );
-};
-
-const BurnBarrel = ({
-  setCards,
-}: {
-  setCards: Dispatch<SetStateAction<CardType[]>>;
-}) => {
+const BurnBarrel = ({ setCards }: { setCards: Dispatch<SetStateAction<CardType[]>> }) => {
   const [active, setActive] = useState(false);
 
   const handleDragOver = (e: DragEvent) => {
@@ -287,15 +293,12 @@ const BurnBarrel = ({
     setActive(true);
   };
 
-  const handleDragLeave = () => {
-    setActive(false);
-  };
+  const handleDragLeave = () => setActive(false);
 
-  const handleDragEnd = (e: DragEvent) => {
+  const handleDragEnd = async (e: DragEvent) => {
     const cardId = e.dataTransfer.getData("cardId");
-
-    setCards((pv) => pv.filter((c) => c.id !== cardId));
-
+    await deleteDoc(doc(db, "tasks", cardId));
+    setCards((prev) => prev.filter((c) => c.id !== cardId));
     setActive(false);
   };
 
@@ -305,9 +308,7 @@ const BurnBarrel = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       className={`mt-10 grid h-56 w-56 shrink-0 place-content-center rounded border text-3xl ${
-        active
-          ? "border-red-800 bg-red-800/20 text-red-500"
-          : "border-neutral-500 bg-neutral-500/20 text-neutral-500"
+        active ? "border-red-800 bg-red-800/20 text-red-500" : "border-neutral-500 bg-neutral-500/20 text-neutral-500"
       }`}
     >
       {active ? <FaFire className="animate-bounce" /> : <FiTrash />}
@@ -315,70 +316,7 @@ const BurnBarrel = ({
   );
 };
 
-type AddCardProps = {
-  column: ColumnType;
-  setCards: Dispatch<SetStateAction<CardType[]>>;
-};
-
-const AddCard = ({ column, setCards }: AddCardProps) => {
-  const [text, setText] = useState("");
-  const [adding, setAdding] = useState(false);
-
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (!text.trim().length) return;
-
-    const newCard = {
-      column,
-      title: text.trim(),
-      id: Math.random().toString(),
-    };
-
-    setCards((pv) => [...pv, newCard]);
-
-    setAdding(false);
-  };
-
-  return (
-    <>
-      {adding ? (
-        <motion.form layout onSubmit={handleSubmit}>
-          <textarea
-            onChange={(e) => setText(e.target.value)}
-            autoFocus
-            placeholder="Add new task..."
-            className="w-full rounded border border-violet-400 bg-violet-400/20 p-3 text-sm text-neutral-900 dark:text-neutral-50 placeholder-violet-300 focus:outline-0"
-          />
-          <div className="mt-1.5 flex items-center justify-end gap-1.5">
-            <button
-              onClick={() => setAdding(false)}
-              className="px-3 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 transition-colors hover:text-neutral-900 dark:hover:text-neutral-50"
-            >
-              Close
-            </button>
-            <button
-              type="submit"
-              className="flex items-center gap-1.5 rounded bg-neutral-900 dark:bg-neutral-50 px-3 py-1.5 text-xs text-neutral-50 dark:text-neutral-900 transition-colors hover:bg-neutral-700 dark:hover:bg-neutral-300"
-            >
-              <span>Add</span>
-              <FiPlus />
-            </button>
-          </div>
-        </motion.form>
-      ) : (
-        <motion.button
-          layout
-          onClick={() => setAdding(true)}
-          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 transition-colors hover:text-neutral-900 dark:hover:text-neutral-50"
-        >
-          <span>Add card</span>
-          <FiPlus />
-        </motion.button>
-      )}
-    </>
-  );
-};
+// Types
 
 type ColumnType = "backlog" | "todo" | "doing" | "done";
 
@@ -386,30 +324,23 @@ type CardType = {
   title: string;
   id: string;
   column: ColumnType;
+  userId: string;
+  projectId: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  position: number;
 };
 
-const DEFAULT_CARDS: CardType[] = [
-  { title: "Look into render bug in dashboard", id: "1", column: "backlog" },
-  { title: "SOX compliance checklist", id: "2", column: "backlog" },
-  { title: "[SPIKE] Migrate to Azure", id: "3", column: "backlog" },
-  { title: "Document Notifications service", id: "4", column: "backlog" },
-  {
-    title: "Research DB options for new microservice",
-    id: "5",
-    column: "todo",
-  },
-  { title: "Postmortem for outage", id: "6", column: "todo" },
-  { title: "Sync with product on Q3 roadmap", id: "7", column: "todo" },
+type AddCardProps = {
+  column: ColumnType;
+  setCards: Dispatch<SetStateAction<CardType[]>>;
+};
 
-  {
-    title: "Refactor context providers to use Zustand",
-    id: "8",
-    column: "doing",
-  },
-  { title: "Add logging to daily CRON", id: "9", column: "doing" },
-  {
-    title: "Set up DD dashboards for Lambda listener",
-    id: "10",
-    column: "done",
-  },
-];
+type CardProps = CardType & {
+  handleDragStart: Function;
+};
+
+type DropIndicatorProps = {
+  beforeId: string | null;
+  column: string;
+};
