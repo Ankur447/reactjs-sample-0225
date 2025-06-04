@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { db, auth } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,32 +13,37 @@ import { Button } from "@/components/ui/button";
 import { Plus, ChevronDown, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Project } from "@/types/kanban";
 
-interface Project {
-  id: string;
-  name: string;
-}
-
-export default function AddProject() {
-  const [projects, setProjects] = useState<Project[]>([
-    { id: "1", name: "Marketing Campaign" },
-    { id: "2", name: "Product Launch" },
-    { id: "3", name: "Website Redesign" },
-  ]);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+export default function AddProject({
+  projects,
+  selectedProject,
+  onSelectProject
+}: {
+  projects: Project[];
+  selectedProject: string | null;
+  onSelectProject: (id: string) => void;
+}) {
   const [newProjectName, setNewProjectName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const handleAddProject = () => {
-    if (newProjectName.trim() !== "") {
+  const handleAddProject = async () => {
+    if (!newProjectName.trim()) return;
+    
+    try {
       const newProject = {
-        id: Date.now().toString(),
         name: newProjectName.trim(),
+        ownerId: auth.currentUser?.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       };
-      setProjects([...projects, newProject]);
-      setSelectedProject(newProject);
-      setNewProjectName("");
+      
+      const docRef = await addDoc(collection(db, "projects"), newProject);
+      onSelectProject(docRef.id);
       setIsDialogOpen(false);
+      setNewProjectName("");
+    } catch (error) {
+      console.error("Error adding project:", error);
     }
   };
 
@@ -49,7 +56,7 @@ export default function AddProject() {
             className="min-w-[180px] justify-between bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50"
           >
             <span className="truncate">
-              {selectedProject?.name || "Select Project"}
+              {projects.find(p => p.id === selectedProject)?.name || "Select Project"}
             </span>
             <ChevronDown className="ml-2 h-4 w-4 shrink-0" />
           </Button>
@@ -58,11 +65,11 @@ export default function AddProject() {
           {projects.map((project) => (
             <DropdownMenuItem
               key={project.id}
-              onSelect={() => setSelectedProject(project)}
+              onSelect={() => onSelectProject(project.id)}
               className="flex justify-between"
             >
               <span className="truncate">{project.name}</span>
-              {selectedProject?.id === project.id && (
+              {selectedProject === project.id && (
                 <Check className="h-4 w-4 text-primary ml-2" />
               )}
             </DropdownMenuItem>

@@ -1,6 +1,7 @@
-// lib/firebase.ts
+
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getFirestore } from "firebase/firestore"; // Add Firestore import
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 // Your Firebase configuration
@@ -17,7 +18,6 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Analytics only on the client side
 let analytics = null;
 if (typeof window !== 'undefined') {
   isSupported().then(yes => yes && (analytics = getAnalytics(app)));
@@ -27,4 +27,7 @@ if (typeof window !== 'undefined') {
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
-export { app, analytics, auth, googleProvider };
+// Initialize Firestore
+const db = getFirestore(app); 
+
+export { app, analytics, auth, googleProvider, db }; 

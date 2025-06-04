@@ -1,163 +1,396 @@
+// components/Kanban.tsx
 "use client";
 
 import React, {
-  Dispatch,
-  SetStateAction,
   useState,
-  type DragEvent,
+  useEffect,
+  DragEvent,
   FormEvent,
+  SetStateAction,
+  Dispatch,
 } from "react";
-import { FiPlus, FiTrash } from "react-icons/fi";
+import { useAuthState } from "react-firebase-hooks/auth";
+import { auth, db } from "@/lib/firebase";
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  doc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { motion } from "framer-motion";
+import { FiPlus, FiTrash } from "react-icons/fi";
 import { FaFire } from "react-icons/fa";
 import { cn } from "@/lib/utils";
-import AddProject from "@/components/AddProject";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Plus, ChevronDown, Check } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+
+// Types
+type ColumnType = "backlog" | "todo" | "doing" | "done";
+
+interface Project {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  column: ColumnType;
+  projectId: string;
+  userId: string;
+  createdAt: Date;
+  position: number;
+}
 
 export const Kanban = () => {
+  const [user] = useAuthState(auth);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  // Fetch projects for current user
+  useEffect(() => {
+    if (!user) return;
+    
+    const q = query(
+      collection(db, "projects"),
+      where("ownerId", "==", user.uid)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const projectsData: Project[] = [];
+      snapshot.forEach(doc => {
+        projectsData.push({
+          id: doc.id,
+          name: doc.data().name,
+          ownerId: doc.data().ownerId,
+          createdAt: doc.data().createdAt.toDate(),
+          updatedAt: doc.data().updatedAt.toDate(),
+        });
+      });
+      setProjects(projectsData);
+      setSelectedProject(projectsData[0]?.id || null);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Fetch tasks for selected project
+  useEffect(() => {
+    if (!selectedProject) return;
+    
+    const q = query(
+      collection(db, "tasks"),
+      where("projectId", "==", selectedProject)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const tasksData: Task[] = [];
+      snapshot.forEach(doc => {
+        tasksData.push({
+          id: doc.id,
+          title: doc.data().title,
+          column: doc.data().column,
+          projectId: doc.data().projectId,
+          userId: doc.data().userId,
+          createdAt: doc.data().createdAt.toDate(),
+          position: doc.data().position,
+        });
+      });
+      
+      // Sort tasks by position
+      const sortedTasks = [...tasksData].sort((a, b) => a.position - b.position);
+      setTasks(sortedTasks);
+    });
+
+    return () => unsubscribe();
+  }, [selectedProject]);
+
   return (
     <div className={cn("h-screen w-full bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50")}>
-      <Board />
+      <div className="flex p-12">
+        <ProjectSelector 
+          projects={projects}
+          selectedProject={selectedProject}
+          onSelectProject={setSelectedProject}
+          setProjects={setProjects}
+        />
+      </div>
+      
+      {selectedProject ? (
+        <div className="flex h-full w-full gap-3 overflow-scroll px-12 pb-12">
+          <Column
+            title="Backlog"
+            column="backlog"
+            headingColor="text-neutral-700 dark:text-neutral-500"
+            tasks={tasks.filter(t => t.column === 'backlog')}
+            setTasks={setTasks}
+            projectId={selectedProject}
+            userId={user?.uid || ""}
+          />
+          <Column
+            title="TODO"
+            column="todo"
+            headingColor="text-yellow-600 dark:text-yellow-200"
+            tasks={tasks.filter(t => t.column === 'todo')}
+            setTasks={setTasks}
+            projectId={selectedProject}
+            userId={user?.uid || ""}
+          />
+          <Column
+            title="In progress"
+            column="doing"
+            headingColor="text-blue-600 dark:text-blue-200"
+            tasks={tasks.filter(t => t.column === 'doing')}
+            setTasks={setTasks}
+            projectId={selectedProject}
+            userId={user?.uid || ""}
+          />
+          <Column
+            title="Complete"
+            column="done"
+            headingColor="text-emerald-600 dark:text-emerald-200"
+            tasks={tasks.filter(t => t.column === 'done')}
+            setTasks={setTasks}
+            projectId={selectedProject}
+            userId={user?.uid || ""}
+          />
+        </div>
+      ) : (
+        <div className="flex justify-center items-center h-64">
+          <p className="text-neutral-500 dark:text-neutral-400">
+            {projects.length === 0 
+              ? "Create your first project to get started" 
+              : "Select a project to view tasks"}
+          </p>
+        </div>
+      )}
     </div>
   );
 };
 
-const Board = () => {
-  const [cards, setCards] = useState(DEFAULT_CARDS);
+// Project Selector Component
+interface ProjectSelectorProps {
+  projects: Project[];
+  selectedProject: string | null;
+  onSelectProject: (id: string) => void;
+  setProjects: Dispatch<SetStateAction<Project[]>>;
+}
+
+const ProjectSelector = ({
+  projects,
+  selectedProject,
+  onSelectProject,
+  setProjects
+}: ProjectSelectorProps) => {
+  const [newProjectName, setNewProjectName] = useState("");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const user = auth.currentUser;
+
+  const handleAddProject = async () => {
+    if (!newProjectName.trim() || !user) return;
+    
+    try {
+      const newProject = {
+        name: newProjectName.trim(),
+        ownerId: user.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      
+      const docRef = await addDoc(collection(db, "projects"), newProject);
+      onSelectProject(docRef.id);
+      setIsDialogOpen(false);
+      setNewProjectName("");
+    } catch (error) {
+      console.error("Error adding project:", error);
+    }
+  };
 
   return (
-    <>
-      <div className="flex p-12">
-        <div className="w-56 shrink-0">
-          <AddProject />
-        </div>
-      </div>
-      <div className="flex h-full w-full gap-3 overflow-scroll px-12 pb-12">
-        <Column
-          title="Backlog"
-          column="backlog"
-          headingColor="text-neutral-700 dark:text-neutral-500"
-          cards={cards}
-          setCards={setCards}
-        />
-        <Column
-          title="TODO"
-          column="todo"
-          headingColor="text-yellow-600 dark:text-yellow-200"
-          cards={cards}
-          setCards={setCards}
-        />
-        <Column
-          title="In progress"
-          column="doing"
-          headingColor="text-blue-600 dark:text-blue-200"
-          cards={cards}
-          setCards={setCards}
-        />
-        <Column
-          title="Complete"
-          column="done"
-          headingColor="text-emerald-600 dark:text-emerald-200"
-          cards={cards}
-          setCards={setCards}
-        />
-        <BurnBarrel setCards={setCards} />
-      </div>
-    </>
+    <div className="flex items-center space-x-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            className="min-w-[180px] justify-between bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50"
+          >
+            <span className="truncate">
+              {projects.find(p => p.id === selectedProject)?.name || "Select Project"}
+            </span>
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="min-w-[240px] max-h-[300px] overflow-y-auto">
+          {projects.map((project) => (
+            <DropdownMenuItem
+              key={project.id}
+              onSelect={() => onSelectProject(project.id)}
+              className="flex justify-between"
+            >
+              <span className="truncate">{project.name}</span>
+              {selectedProject === project.id && (
+                <Check className="h-4 w-4 text-primary ml-2" />
+              )}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogTrigger asChild>
+          <Button size="icon" variant="outline">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[425px]">
+          <div className="space-y-6">
+            <h3 className="text-lg font-medium">Create New Project</h3>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="projectName" className="block text-sm font-medium mb-2">
+                  Project Name
+                </label>
+                <Input
+                  id="projectName"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="Enter project name"
+                  className="focus-visible:ring-2 focus-visible:ring-primary"
+                />
+              </div>
+              <Button
+                onClick={handleAddProject}
+                disabled={!newProjectName.trim()}
+                className="w-full"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Create Project
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 
-type ColumnProps = {
+// Column Component
+interface ColumnProps {
   title: string;
   headingColor: string;
-  cards: CardType[];
+  tasks: Task[];
   column: ColumnType;
-  setCards: Dispatch<SetStateAction<CardType[]>>;
-};
+  projectId: string;
+  userId: string;
+  setTasks: Dispatch<SetStateAction<Task[]>>;
+}
 
 const Column = ({
   title,
   headingColor,
-  cards,
+  tasks,
   column,
-  setCards,
+  projectId,
+  userId,
+  setTasks
 }: ColumnProps) => {
   const [active, setActive] = useState(false);
 
-  const handleDragStart = (e: DragEvent, card: CardType) => {
-    e.dataTransfer.setData("cardId", card.id);
+  const handleDragStart = (e: DragEvent, task: Task) => {
+    e.dataTransfer.setData("taskId", task.id);
   };
 
-  const handleDragEnd = (e: DragEvent) => {
-    const cardId = e.dataTransfer.getData("cardId");
-
+  const handleDragEnd = async (e: DragEvent) => {
+    const taskId = e.dataTransfer.getData("taskId");
     setActive(false);
-    clearHighlights();
-
+    
     const indicators = getIndicators();
+    clearHighlights(indicators);
+    
     const { element } = getNearestIndicator(e, indicators);
+    const beforeId = element.dataset.before || "-1";
 
-    const before = element.dataset.before || "-1";
+    if (beforeId !== taskId) {
+      try {
+        const originalTask = tasks.find(t => t.id === taskId);
+        if (!originalTask) return;
 
-    if (before !== cardId) {
-      let copy = [...cards];
-
-      let cardToTransfer = copy.find((c) => c.id === cardId);
-      if (!cardToTransfer) return;
-      cardToTransfer = { ...cardToTransfer, column };
-
-      copy = copy.filter((c) => c.id !== cardId);
-
-      const moveToBack = before === "-1";
-
-      if (moveToBack) {
-        copy.push(cardToTransfer);
-      } else {
-        const insertAtIndex = copy.findIndex((el) => el.id === before);
-        if (insertAtIndex === undefined) return;
-
-        copy.splice(insertAtIndex, 0, cardToTransfer);
+        // Update task in Firestore
+        const taskRef = doc(db, "tasks", taskId);
+        await updateDoc(taskRef, {
+          column,
+          updatedAt: serverTimestamp(),
+          position: Date.now() // Update position on move
+        });
+        
+        // Optimistic UI update
+        setTasks(prev => {
+          const copy = prev.filter(t => t.id !== taskId);
+          const newTask = { ...originalTask, column };
+          
+          if (beforeId === "-1") {
+            return [...copy, newTask];
+          } else {
+            const insertIndex = copy.findIndex(t => t.id === beforeId);
+            if (insertIndex === -1) return [...copy, newTask];
+            copy.splice(insertIndex, 0, newTask);
+            return copy;
+          }
+        });
+      } catch (error) {
+        console.error("Error moving task:", error);
       }
-
-      setCards(copy);
     }
   };
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     highlightIndicator(e);
-
     setActive(true);
   };
 
-  const clearHighlights = (els?: HTMLElement[]) => {
-    const indicators = els || getIndicators();
-
-    indicators.forEach((i) => {
-      i.style.opacity = "0";
-    });
+  const handleDragLeave = () => {
+    setActive(false);
+    clearHighlights();
   };
 
-  const highlightIndicator = (e: DragEvent) => {
-    const indicators = getIndicators();
+  // Helper functions
+  const clearHighlights = (els?: HTMLElement[]) => {
+    const indicators = els || getIndicators();
+    indicators.forEach(i => (i.style.opacity = "0"));
+  };
 
-    clearHighlights(indicators);
-
-    const el = getNearestIndicator(e, indicators);
-
-    el.element.style.opacity = "1";
+  const getIndicators = () => {
+    return Array.from(
+      document.querySelectorAll(`[data-column="${column}"]`)
+    ) as HTMLElement[];
   };
 
   const getNearestIndicator = (e: DragEvent, indicators: HTMLElement[]) => {
     const DISTANCE_OFFSET = 50;
-
-    const el = indicators.reduce(
+    return indicators.reduce(
       (closest, child) => {
         const box = child.getBoundingClientRect();
-
         const offset = e.clientY - (box.top + DISTANCE_OFFSET);
-
+        
         if (offset < 0 && offset > closest.offset) {
-          return { offset: offset, element: child };
+          return { offset, element: child };
         } else {
           return closest;
         }
@@ -167,183 +400,139 @@ const Column = ({
         element: indicators[indicators.length - 1],
       }
     );
-
-    return el;
   };
 
-  const getIndicators = () => {
-    return Array.from(
-      document.querySelectorAll(
-        `[data-column="${column}"]`
-      ) as unknown as HTMLElement[]
-    );
-  };
-
-  const handleDragLeave = () => {
+  const highlightIndicator = (e: DragEvent) => {
     clearHighlights();
-    setActive(false);
+    const nearest = getNearestIndicator(e, getIndicators());
+    nearest.element.style.opacity = "1";
   };
-
-  const filteredCards = cards.filter((c) => c.column === column);
 
   return (
-    <div className="w-56 shrink-0">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className={`font-bold ${headingColor}`}>{title}</h3>
-        <span className="rounded text-sm font-bold text-neutral-400">
-          {filteredCards.length}
-        </span>
+    <div className="flex flex-col gap-4 min-w-[300px]">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">{title}</h2>
+        <AddCard column={column} projectId={projectId} userId={userId} />
       </div>
-      <div
-        onDrop={handleDragEnd}
+      <div 
+        className="flex flex-col gap-4"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        className={`h-full w-full transition-colors ${
-          active ? "bg-neutral-800/50" : "bg-neutral-800/0"
-        }`}
       >
-        {filteredCards.map((c) => {
-          return <Card key={c.id} {...c} handleDragStart={handleDragStart} />;
-        })}
-        <DropIndicator beforeId={null} column={column} />
-        <AddCard column={column} setCards={setCards} />
+        {tasks.map((task) => (
+          <Card 
+            key={task.id} 
+            task={task} 
+            handleDragStart={handleDragStart}
+            handleDragEnd={handleDragEnd}
+            handleDragOver={handleDragOver}
+            handleDragLeave={handleDragLeave}
+          />
+        ))}
+        {active && (
+          <>
+            {tasks.map((task, index) => (
+              <DropIndicator
+                key={`indicator-${index}`}
+                beforeId={index === 0 ? null : tasks[index - 1].id}
+                column={column}
+              />
+            ))}
+            <DropIndicator key="indicator-end" beforeId="-1" column={column} />
+          </>
+        )}
       </div>
     </div>
   );
 };
 
-type CardProps = CardType & {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  handleDragStart: Function;
-};
+// Card Component
+interface CardProps {
+  task: Task;
+  handleDragStart: (e: DragEvent, task: Task) => void;
+}
 
-const Card = ({ title, id, column, handleDragStart }: CardProps) => {
+const Card = ({ task, handleDragStart }: CardProps) => {
   const [isDragging, setIsDragging] = useState(false);
-
-  const handleTouchStart = () => {
-    setIsDragging(true);
-    // Create a drag event to reuse existing drag logic
-    const dragEvent = new DragEvent('dragstart', {
-      bubbles: true,
-      cancelable: true,
-    });
-    handleDragStart(dragEvent, { title, id, column });
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    e.preventDefault();
-  };
-
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-  };
 
   return (
     <>
-      <DropIndicator beforeId={id} column={column} />
+      <DropIndicator beforeId={task.id} column={task.column} />
       <motion.div
         layout
-        layoutId={id}
+        layoutId={task.id}
         draggable="true"
-        onDragStart={(e) => handleDragStart(e, { title, id, column })}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`cursor-grab rounded border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 p-3 active:cursor-grabbing ${
-          isDragging ? 'opacity-50' : ''
-        }`}
+        onDragStart={(e) => {
+          setIsDragging(true);
+          handleDragStart(e, task);
+        }}
+        onDragEnd={() => setIsDragging(false)}
+        className={cn(
+          "cursor-grab rounded border border-neutral-200 dark:border-neutral-700",
+          "bg-white dark:bg-neutral-800 p-3 active:cursor-grabbing",
+          isDragging ? "opacity-50" : "opacity-100"
+        )}
       >
-        <p className="text-sm text-neutral-900 dark:text-neutral-100">{title}</p>
+        <p className="text-sm text-neutral-900 dark:text-neutral-100">{task.title}</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+          {new Date(task.createdAt).toLocaleDateString()}
+        </p>
       </motion.div>
     </>
   );
 };
 
-type DropIndicatorProps = {
+// Drop Indicator Component
+interface DropIndicatorProps {
   beforeId: string | null;
   column: string;
-};
+}
 
 const DropIndicator = ({ beforeId, column }: DropIndicatorProps) => {
   return (
     <div
       data-before={beforeId || "-1"}
       data-column={column}
-      className="my-0.5 h-0.5 w-full bg-violet-400 opacity-0"
+      className="my-0.5 h-0.5 w-full bg-violet-400 opacity-0 transition-opacity duration-200"
     />
   );
 };
 
-const BurnBarrel = ({
-  setCards,
-}: {
-  setCards: Dispatch<SetStateAction<CardType[]>>;
-}) => {
-  const [active, setActive] = useState(false);
-
-  const handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    setActive(true);
-  };
-
-  const handleDragLeave = () => {
-    setActive(false);
-  };
-
-  const handleDragEnd = (e: DragEvent) => {
-    const cardId = e.dataTransfer.getData("cardId");
-
-    setCards((pv) => pv.filter((c) => c.id !== cardId));
-
-    setActive(false);
-  };
-
-  return (
-    <div
-      onDrop={handleDragEnd}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      className={`mt-10 grid h-56 w-56 shrink-0 place-content-center rounded border text-3xl ${
-        active
-          ? "border-red-800 bg-red-800/20 text-red-500"
-          : "border-neutral-500 bg-neutral-500/20 text-neutral-500"
-      }`}
-    >
-      {active ? <FaFire className="animate-bounce" /> : <FiTrash />}
-    </div>
-  );
-};
-
-type AddCardProps = {
+// Add Card Component
+interface AddCardProps {
   column: ColumnType;
-  setCards: Dispatch<SetStateAction<CardType[]>>;
-};
+  projectId: string;
+  userId: string;
+}
 
-const AddCard = ({ column, setCards }: AddCardProps) => {
+const AddCard = ({ column, projectId, userId }: AddCardProps) => {
   const [text, setText] = useState("");
   const [adding, setAdding] = useState(false);
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!text.trim() || !userId) return;
 
-    if (!text.trim().length) return;
-
-    const newCard = {
-      column,
-      title: text.trim(),
-      id: Math.random().toString(),
-    };
-
-    setCards((pv) => [...pv, newCard]);
-
-    setAdding(false);
+    try {
+      await addDoc(collection(db, "tasks"), {
+        title: text.trim(),
+        column,
+        projectId,
+        userId,
+        createdAt: serverTimestamp(),
+        position: Date.now() // Use timestamp for ordering
+      });
+      setText("");
+      setAdding(false);
+    } catch (error) {
+      console.error("Error adding task:", error);
+    }
   };
 
   return (
     <>
       {adding ? (
-        <motion.form layout onSubmit={handleSubmit}>
+        <motion.form layout onSubmit={handleSubmit} className="mt-2">
           <textarea
             onChange={(e) => setText(e.target.value)}
             autoFocus
@@ -370,7 +559,7 @@ const AddCard = ({ column, setCards }: AddCardProps) => {
         <motion.button
           layout
           onClick={() => setAdding(true)}
-          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 transition-colors hover:text-neutral-900 dark:hover:text-neutral-50"
+          className="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-neutral-500 dark:text-neutral-400 transition-colors hover:text-neutral-900 dark:hover:text-neutral-50 mt-2"
         >
           <span>Add card</span>
           <FiPlus />
@@ -379,37 +568,3 @@ const AddCard = ({ column, setCards }: AddCardProps) => {
     </>
   );
 };
-
-type ColumnType = "backlog" | "todo" | "doing" | "done";
-
-type CardType = {
-  title: string;
-  id: string;
-  column: ColumnType;
-};
-
-const DEFAULT_CARDS: CardType[] = [
-  { title: "Look into render bug in dashboard", id: "1", column: "backlog" },
-  { title: "SOX compliance checklist", id: "2", column: "backlog" },
-  { title: "[SPIKE] Migrate to Azure", id: "3", column: "backlog" },
-  { title: "Document Notifications service", id: "4", column: "backlog" },
-  {
-    title: "Research DB options for new microservice",
-    id: "5",
-    column: "todo",
-  },
-  { title: "Postmortem for outage", id: "6", column: "todo" },
-  { title: "Sync with product on Q3 roadmap", id: "7", column: "todo" },
-
-  {
-    title: "Refactor context providers to use Zustand",
-    id: "8",
-    column: "doing",
-  },
-  { title: "Add logging to daily CRON", id: "9", column: "doing" },
-  {
-    title: "Set up DD dashboards for Lambda listener",
-    id: "10",
-    column: "done",
-  },
-];
