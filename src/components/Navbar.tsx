@@ -6,6 +6,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Loader2 } from "lucide-react";
+import { auth } from "@/lib/firebase";
+import { signOut as firebaseSignOut } from "firebase/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +19,8 @@ import { useEffect, useState } from "react";
 
 export default function Navbar() {
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  
 
   useEffect(() => {
     const loadRandomAvatar = async () => {
@@ -77,8 +82,30 @@ export default function Navbar() {
                 <DropdownMenuItem>Projects</DropdownMenuItem>
                 <DropdownMenuItem>Team</DropdownMenuItem>
                 <DropdownMenuItem>Settings</DropdownMenuItem>
-                <DropdownMenuItem className="text-destructive focus:text-destructive">
-                  Logout
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    setIsLoading(true);
+                    try {
+                      // Sign out from Firebase
+                      await firebaseSignOut(auth);
+                      // Clear session storage
+                      sessionStorage.clear();
+                      // Redirect to home
+                      window.location.href = '/';
+                    } catch (error) {
+                      console.error("Logout error:", error);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Logout"
+                  )}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

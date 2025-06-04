@@ -25,8 +25,8 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { useProjectStore } from "@/app/store/useProjectStore";
 
-const selectedProjectId = "MAQ26WhVYuxj97DWv52u"; // TODO: Get from state or props
 const userId = "nqBWR6Do46ggw6lx9vy2I40hlP43"; // TODO: Get from auth/session
 
 export const Kanban = () => {
@@ -43,23 +43,30 @@ export const Kanban = () => {
 
 const Board = () => {
   const [cards, setCards] = useState<CardType[]>([]);
+  const { selectedProject } = useProjectStore();
 
   useEffect(() => {
+    if (!selectedProject?.id) return;
+
+    setCards([]); // 🔁 Reset previous tasks
+
     const q = query(
       collection(db, "tasks"),
-      where("projectId", "==", selectedProjectId)
+      where("projectId", "==", selectedProject.id)
     );
 
     const unsub = onSnapshot(q, (snapshot) => {
-      const tasks = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as CardType[];
+      const tasks = snapshot.docs
+        .map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        } as CardType))
+        .sort((a, b) => (a.position || 0) - (b.position || 0));
       setCards(tasks);
     });
 
     return () => unsub();
-  }, []);
+  }, [selectedProject?.id]);
 
   return (
     <>
@@ -207,16 +214,21 @@ const Column = ({ title, headingColor, cards, column, setCards }: ColumnProps) =
 const AddCard = ({ column, setCards }: AddCardProps) => {
   const [text, setText] = useState("");
   const [adding, setAdding] = useState(false);
+  const { selectedProject } = useProjectStore();
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!text.trim().length) return;
+    if (!selectedProject?.id) {
+      alert('Please select a project first');
+      return;
+    }
 
     const newTask = {
       title: text.trim(),
       column,
       userId,
-      projectId: selectedProjectId,
+      projectId: selectedProject.id,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
       position: Date.now(),
@@ -227,6 +239,9 @@ const AddCard = ({ column, setCards }: AddCardProps) => {
     setText("");
     setAdding(false);
   };
+
+  // Disable adding if no project is selected
+  const canAddCard = !!selectedProject?.id;
 
   return adding ? (
     <motion.form layout onSubmit={handleSubmit}>
@@ -247,8 +262,20 @@ const AddCard = ({ column, setCards }: AddCardProps) => {
   ) : (
     <motion.button
       layout
-      onClick={() => setAdding(true)}
-      className="flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900"
+      onClick={() => {
+        if (!canAddCard) {
+          alert('Please select a project first');
+          return;
+        }
+        setAdding(true);
+      }}
+      className={`flex items-center gap-1.5 text-xs ${
+        canAddCard 
+          ? 'text-neutral-500 hover:text-neutral-900' 
+          : 'text-neutral-400 cursor-not-allowed'
+      }`}
+      title={!canAddCard ? 'Please select a project first' : 'Add new card'}
+      disabled={!canAddCard}
     >
       <span>Add card</span>
       <FiPlus />

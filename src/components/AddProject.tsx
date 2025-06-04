@@ -20,6 +20,7 @@ import {
   where,
   onSnapshot,
 } from "firebase/firestore";
+import { useProjectStore } from "@/app/store/useProjectStore";
 
 interface Project {
   id: string;
@@ -28,9 +29,16 @@ interface Project {
 
 export default function AddProject() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [newProjectName, setNewProjectName] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const { selectedProject, setSelectedProject } = useProjectStore();
+
+  // Auto-select first project
+  useEffect(() => {
+    if (projects.length > 0 && !selectedProject) {
+      setSelectedProject(projects[0]);
+    }
+  }, [projects, selectedProject, setSelectedProject]);
 
   const user = JSON.parse(sessionStorage.getItem("user") || "{}");
 
