@@ -106,7 +106,7 @@ const Board = () => {
 
   return (
     <>
-      <div className="flex p-4 md:p-12">
+      <div className="flex pt-20 md:pt-4 p-4 md:p-12">
         <div className="w-full md:w-56 shrink-0">
           <AddProject />
         </div>
